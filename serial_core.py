@@ -47,7 +47,7 @@ class SerialCore:
             self.q.put({"status": msg})
         self.processor.calib.start_rest(dur, callback=cb)
 
-    def swing_calib(self, dur=5.0):
+    def swing_calib(self, dur=10.0):
         def cb(msg):
             if msg == "Schwing-Kalibrierung fertig":
                 ax = self.processor.calib.axis.tolist()
