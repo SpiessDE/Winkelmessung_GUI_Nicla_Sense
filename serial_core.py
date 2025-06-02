@@ -1,15 +1,13 @@
-# serial_core.py
 import threading, queue, time
 import serial
 from data_processor import DataProcessor
 
 class SerialCore:
     def __init__(self):
-        self.q     = queue.Queue()
+        self.q = queue.Queue()
         self._stop = threading.Event()
-        self.ser   = None
-        self.th    = None
-
+        self.ser = None
+        self.th = None
         # zentraler DataProcessor für USB
         self.processor = DataProcessor(queue=self.q)
 
@@ -42,15 +40,17 @@ class SerialCore:
                 continue
             self.processor.process(ms, qx, qy, qz, qw)
 
-    def rest_calib(self, dur=0.5):
+    def swing_calib(self, dur=10.0):
+        """Zweiphasige Swing-Kalibrierung über USB auslösen."""
         def cb(msg):
-            self.q.put({"status": msg})
-        self.processor.calib.start_rest(dur, callback=cb)
-
-    def swing_calib(self, dur=5.0):
-        def cb(msg):
-            if msg == "Schwing-Kalibrierung fertig":
+            if msg == "swing_pca_done":
                 ax = self.processor.calib.axis.tolist()
                 self.q.put({"dominant_axis": ax})
             self.q.put({"status": msg})
         self.processor.calib.start_swing(dur, callback=cb)
+
+    def confirm_baseline(self, dur=0.5):
+        """Bestätigung der Stillstand-Phase auslösen."""
+        def cb(msg):
+            self.q.put({"status": msg})
+        self.processor.calib.confirm_baseline(dur, callback=cb)

@@ -1,9 +1,7 @@
-# viewer_core.py
 import asyncio
 import struct
 import threading
 from bleak import BleakClient, BleakScanner
-
 from data_processor import DataProcessor
 
 CHAR_UUID = "19b10001-0000-537e-4f6c-d104768a1214"
@@ -18,7 +16,6 @@ class ViewerCore:
         self.loop   = _new_loop()
         self.client = None
         self.is_connected = False
-
         # zentraler DataProcessor für BLE
         self.processor = DataProcessor(queue=None)
         self.queue     = None
@@ -51,21 +48,22 @@ class ViewerCore:
             asyncio.run_coroutine_threadsafe(self.client.disconnect(), self.loop)
             self.client = None
 
-    def rest_calib(self, dur=0.5):
-        def cb(msg):
-            if self.queue:
-                self.queue.put({"status": msg})
-        self.processor.calib.start_rest(dur, callback=cb)
-
     def swing_calib(self, dur=10.0):
+        """Zweiphasige Swing-Kalibrierung über BLE auslösen."""
+        def cb(msg):
+            if self.queue:
+                if msg == "swing_pca_done":
+                    ax = self.processor.calib.axis.tolist()
+                    self.queue.put({"dominant_axis": ax})
+                self.queue.put({"status": msg})
+        self.processor.calib.start_swing(dur, callback=cb)
+
+    def confirm_baseline(self, dur=0.5):
+        """Bestätigung der Stillstand-Phase auslösen."""
         def cb(msg):
             if self.queue:
                 self.queue.put({"status": msg})
-            if msg == "Schwing-Kalibrierung fertig":
-                # dominante Achse ebenfalls senden
-                ax = self.processor.calib.axis.tolist()
-                self.queue.put({"dominant_axis": ax})
-        self.processor.calib.start_swing(dur, callback=cb)
+        self.processor.calib.confirm_baseline(dur, callback=cb)
 
     def _notify(self, handle, data: bytes):
         # Unpack <Iffff> = millis + 4×float
