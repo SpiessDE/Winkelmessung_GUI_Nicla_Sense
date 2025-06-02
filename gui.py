@@ -1,6 +1,8 @@
 """
 gui.py – Nicla-Viewer GUI mit USB-prioritärer Verbindung, BLE-Fallback,
-CSV, Live-3D+2D und zweiphasiger Swing-Kalibrierung (10 s PCA + Bestätigung).
+CSV, Live-3D+2D, zweiphasiger Swing-Kalibrierung (10 s PCA + Bestätigung)
+und zusätzlicher Analyse des kalibrierten Roll-Winkels.
+3D- und 2D-Plot stehen nun nebeneinander in einer Zeile.
 """
 
 import tkinter as tk
@@ -21,7 +23,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 try:
     from ttkthemes import ThemedTk
-    RootTk, THEME = ThemedTk, {"theme": "arc"}
+    RootTk, THEME = ThemedTk, {"theme": "arc"}  # helles Arc-Theme
 except ImportError:
     RootTk, THEME = tk.Tk, {}
 
@@ -29,7 +31,7 @@ class NiclaGUI(RootTk):
     def __init__(self):
         super().__init__(**THEME)
         self.title("Nicla Bell Viewer")
-        self.geometry("1040x820")
+        self.geometry("1200x1000")  # Fensterbreite vergrößert für nebeneinander stehende Plots
         self.configure(bg="#fafafa")
 
         # Backends
@@ -46,6 +48,11 @@ class NiclaGUI(RootTk):
         # Buffers für 2D-Plot
         self.buf_t  = collections.deque(maxlen=400)
         self.buf_rl = collections.deque(maxlen=400)
+
+        # Analyse‐Modus‐State
+        self.analyzing     = False
+        self.analyse_t     = []
+        self.analyse_roll  = []
 
         self._style()
         self._build_widgets()
@@ -110,26 +117,27 @@ class NiclaGUI(RootTk):
             ttk.Label(mat, textvariable=sv, width=26, anchor="w").grid(row=i, column=0, padx=4, pady=2)
             self.var[r] = sv
 
-        # Plot-Bereich
+        # Plot-Bereich (nebenläufig, 3D links, 2D rechts)
         plot_area = ttk.Frame(self); plot_area.pack(fill="both", expand=True, padx=10, pady=(4,10))
-        fig = plt.Figure(figsize=(9.6,6.8), facecolor="#fafafa")
-        gs  = fig.add_gridspec(2,1, height_ratios=[3,1], hspace=0.25)
+        fig = plt.Figure(figsize=(10,5), facecolor="#fafafa")
+        gs  = fig.add_gridspec(1,2, width_ratios=[1,1], wspace=0.3)
 
-        # 3D-Plot
+        # 3D-Plot (links)
         ax3 = fig.add_subplot(gs[0], projection="3d", facecolor="#fafafa")
         ax3.set_xlim(-1,1); ax3.set_ylim(-1,1); ax3.set_zlim(-1,1)
         for axis in (ax3.xaxis, ax3.yaxis, ax3.zaxis):
-            axis.set_ticks([]); axis.set_ticklabels([])
-        ax3.view_init(elev=30, azim=90)  # Blick senkrecht auf Roll-X-Achse
+            axis.set_ticklabels([])#; axis.set_ticks([])
+        ax3.view_init(elev=0, azim=90)  # Blick senkrecht auf Roll-X-Achse
         self.ax_lines = [
             ax3.plot([0,1],[0,0],[0,0],'#d62728', lw=3)[0],
             ax3.plot([0,0],[0,1],[0,0],'#2ca02c', lw=3)[0],
             ax3.plot([0,0],[0,0],[0,1],'#1f77b4', lw=3)[0],
         ]
 
-        # 2D-Plot Roll vs. Zeit
+
+        # 2D-Plot: Roll vs. Zeit (rechts)
         ax2 = fig.add_subplot(gs[1], facecolor="#fafafa")
-        ax2.set_title("Roll° vs Zeit (s)", fontsize=9)
+        ax2.set_title("Roll° vs Zeit (s)", fontsize=10)
         ax2.set_xlabel("Sekunden"); ax2.set_ylabel("Roll°"); ax2.grid(alpha=0.3)
         self.line2d, = ax2.plot([], [], '#d62728')
         self.ax2 = ax2
@@ -137,6 +145,17 @@ class NiclaGUI(RootTk):
         canvas = FigureCanvasTkAgg(fig, master=plot_area)
         canvas.draw(); canvas.get_tk_widget().pack(fill="both", expand=True)
         self.canvas = canvas
+
+        # -------------- Neuer Abschnitt: Analyse --------------
+        analyse_frame = ttk.LabelFrame(self, text="Analyse (Roll-Winkel)")
+        analyse_frame.pack(fill="x", padx=10, pady=(0,10))
+
+        self.btn_analyse = ttk.Button(analyse_frame, text="Starte Analyse", command=self._toggle_analysis)
+        self.btn_analyse.pack(side="top", pady=(4,4))
+
+        self.txt_analyse = tk.Text(analyse_frame, height=6, width=100, state="disabled",
+                                   background="#ffffff", relief="solid", bd=1)
+        self.txt_analyse.pack(side="top", padx=10, pady=(0,4))
 
     def _mode_changed(self):
         usb = (self.mode.get()=="USB")
@@ -215,6 +234,10 @@ class NiclaGUI(RootTk):
             backend.set_manual_roll(0.0)
         self.buf_t.clear(); self.buf_rl.clear()
 
+        # Falls Analyse aktiv war, beenden und zurücksetzen
+        if self.analyzing:
+            self._toggle_analysis(end_early=True)
+
     def _poll(self):
         try:
             while True:
@@ -225,8 +248,14 @@ class NiclaGUI(RootTk):
 
                 if "status" in d:
                     st = d["status"]
-                    if st == "please_swing":
+                    if st == "please_hold_baseline":
+                        self.lbl_status.configure(text="Bitte Glocke stillhalten…")
+                    elif st == "baseline_done":
+                        self.lbl_status.configure(text="Baseline OK")
+                    elif st == "please_swing":
                         self.lbl_status.configure(text="Bitte Glocke schwingen…")
+                    elif st.endswith("s verbleiben"):
+                        self.lbl_status.configure(text=st)  # Countdown („10 s verbleiben“)
                     elif st == "swing_pca_done":
                         self.lbl_status.configure(text="PCA fertig. Jetzt stillhalten!")
                         self.btn_confirm.configure(state="normal")
@@ -238,7 +267,7 @@ class NiclaGUI(RootTk):
                         self.lbl_status.configure(text=st)
 
                 elif "dominant_axis" in d:
-                    # hier könnt Ihr d["dominant_axis"] anzeigen
+                    # optional: d["dominant_axis"] anzeigen oder anderweitig nutzen
                     pass
 
                 else:
@@ -253,30 +282,35 @@ class NiclaGUI(RootTk):
         # System-Felder
         for k, fmt in [("secs","{:.4f}"),("rate","{:.1f}"),("srate","{:.1f}")]:
             self.var[k].set(fmt.format(d[k]))
+
         # Euler
         for k, fmt in [("roll","{:+6.2f}"),("pitch","{:+6.2f}"),("yaw","{:+6.2f}")]:
             self.var[k].set(fmt.format(d[k]))
+
         # Quaternion
         for k in ("qx","qy","qz","qw"):
             self.var[k].set(f"{d[k]:+.4f}")
+
         # Matrix
         R = d["R"]
         self.var["r0"].set(" ".join(f"{v:+.3f}" for v in R[0]))
         self.var["r1"].set(" ".join(f"{v:+.3f}" for v in R[1]))
         self.var["r2"].set(" ".join(f"{v:+.3f}" for v in R[2]))
+
         # 3D-Plot update
-        for i,line in enumerate(self.ax_lines):
-            line.set_data([0,R[0,i]],[0,R[1,i]])
-            line.set_3d_properties([0,R[2,i]])
-        # 2D-Plot
+        for i, line in enumerate(self.ax_lines):
+            line.set_data([0, R[0,i]], [0, R[1,i]])
+            line.set_3d_properties([0, R[2,i]])
+
+        # 2D-Plot update
         self.buf_t.append(d["secs"]); self.buf_rl.append(d["roll"])
         self.line2d.set_data(self.buf_t, self.buf_rl)
-        if len(self.buf_t)>1:
+        if len(self.buf_t) > 1:
             self.ax2.set_xlim(self.buf_t[0], self.buf_t[-1])
         lo, hi = min(self.buf_rl), max(self.buf_rl)
         self.ax2.set_ylim(lo-5, hi+5)
-        self.canvas.draw_idle()
 
+        # CSV schreiben, falls aktiv
         if self._csv_wr:
             self._csv_wr.writerow([
                 f"{d['secs']:.4f}",
@@ -288,6 +322,82 @@ class NiclaGUI(RootTk):
                 f"{d['qz']:.6f}",
                 f"{d['qw']:.6f}"
             ])
+
+        # Analyse‐Daten puffern, falls aktiv
+        if self.analyzing:
+            self.analyse_t.append(d["secs"])
+            self.analyse_roll.append(d["roll"])
+
+        # Canvas neu zeichnen
+        self.canvas.draw_idle()
+
+    # ---------------- Analyse-Funktionen ----------------
+
+    def _toggle_analysis(self, end_early=False):
+        """
+        Startet oder beendet den Analyse-Modus.
+        Wenn end_early=True, wird Analyse diskret abgebrochen, ohne Auswertung.
+        """
+        if not self.analyzing:
+            # Starte Analyse
+            self.analyzing = True
+            self.analyse_t.clear()
+            self.analyse_roll.clear()
+            self.btn_analyse.configure(text="Beende Analyse")
+            self.txt_analyse.configure(state="normal")
+            self.txt_analyse.delete("1.0", tk.END)
+            self.txt_analyse.insert(tk.END, "Analysiere… Bitte warten.\n")
+            self.txt_analyse.configure(state="disabled")
+        else:
+            # Beende Analyse
+            self.analyzing = False
+            self.btn_analyse.configure(text="Starte Analyse")
+            if not end_early:
+                self._compute_and_show_analysis()
+
+    def _compute_and_show_analysis(self):
+        """
+        Berechnet die Kennzahlen aus analyse_t und analyse_roll und zeigt sie an.
+        """
+        t = np.array(self.analyse_t)
+        r = np.array(self.analyse_roll)
+
+        if len(r) < 3:
+            text = "Zu wenige Daten für Analyse."
+        else:
+            # 1) Maximal positiver Roll-Wert
+            max_pos = np.max(r)
+
+            # 2) Maximal negativer Roll-Wert
+            max_neg = np.min(r)
+
+            # 3) Mittelwert aus Max/Min
+            mid_val = 0.5 * (max_pos + max_neg)
+
+            # 4 + 5) Schwingfrequenz & Periodendauer aus lokalen Maxima
+            idx_peaks = np.where((r[1:-1] > r[:-2]) & (r[1:-1] > r[2:]))[0] + 1
+            if len(idx_peaks) >= 2:
+                t_peaks = t[idx_peaks]
+                periods = np.diff(t_peaks)
+                period_avg = np.mean(periods)
+                freq = 1.0 / period_avg if period_avg > 0 else 0.0
+            else:
+                period_avg = 0.0
+                freq = 0.0
+
+            text = (
+                f"Max. positiver Roll (°):  {max_pos:+.2f}\n"
+                f"Max. negativer Roll (°):  {max_neg:+.2f}\n"
+                f"Mittlerer Wert aus Max/Min (°): {mid_val:+.2f}\n\n"
+                f"Mittlere Periodendauer (s): {period_avg:.3f}\n"
+                f"Schwingfrequenz (Hz): {freq:.3f}\n"
+            )
+
+        # Ausgabe ins Textfeld
+        self.txt_analyse.configure(state="normal")
+        self.txt_analyse.delete("1.0", tk.END)
+        self.txt_analyse.insert(tk.END, text)
+        self.txt_analyse.configure(state="disabled")
 
 if __name__=="__main__":
     NiclaGUI().mainloop()
