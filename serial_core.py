@@ -1,3 +1,5 @@
+# serial_core.py
+
 import threading, queue, time
 import serial
 from data_processor import DataProcessor
@@ -8,6 +10,7 @@ class SerialCore:
         self._stop = threading.Event()
         self.ser = None
         self.th = None
+
         # zentraler DataProcessor für USB
         self.processor = DataProcessor(queue=self.q)
 
@@ -50,7 +53,16 @@ class SerialCore:
         self.processor.calib.start_swing(dur, callback=cb)
 
     def confirm_baseline(self, dur=0.5):
-        """Bestätigung der Stillstand-Phase auslösen."""
+        """Bestätigung der Stillstand-Phase auslösen (Rolloffset)."""
         def cb(msg):
             self.q.put({"status": msg})
         self.processor.calib.confirm_baseline(dur, callback=cb)
+
+    def null_calib(self, dur=0.5):
+        """
+        Nullpunkt-Kalibrierung (alle Achsen) über USB auslösen.
+        Vergleichbar mit confirm_baseline, aber für alle 3 Achsen.
+        """
+        def cb(msg):
+            self.q.put({"status": msg})
+        self.processor.calib.start_nullpoint(dur, callback=cb)

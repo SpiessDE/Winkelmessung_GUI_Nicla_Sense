@@ -1,3 +1,5 @@
+# viewer_core.py
+
 import asyncio
 import struct
 import threading
@@ -16,6 +18,7 @@ class ViewerCore:
         self.loop   = _new_loop()
         self.client = None
         self.is_connected = False
+
         # zentraler DataProcessor für BLE
         self.processor = DataProcessor(queue=None)
         self.queue     = None
@@ -59,11 +62,20 @@ class ViewerCore:
         self.processor.calib.start_swing(dur, callback=cb)
 
     def confirm_baseline(self, dur=0.5):
-        """Bestätigung der Stillstand-Phase auslösen."""
+        """Bestätigung der Stillstand-Phase (Rolloffset) auslösen."""
         def cb(msg):
             if self.queue:
                 self.queue.put({"status": msg})
         self.processor.calib.confirm_baseline(dur, callback=cb)
+
+    def null_calib(self, dur=0.5):
+        """
+        Nullpunkt-Kalibrierung (alle Achsen) über BLE auslösen.
+        """
+        def cb(msg):
+            if self.queue:
+                self.queue.put({"status": msg})
+        self.processor.calib.start_nullpoint(dur, callback=cb)
 
     def _notify(self, handle, data: bytes):
         # Unpack <Iffff> = millis + 4×float
