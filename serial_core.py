@@ -4,7 +4,7 @@ import threading, queue, time, serial
 from data_processor import DataProcessor
 
 class SerialCore:
-    def __init__(self, port="/dev/ttyACM0", baud=115200):
+    def __init__(self, port="/dev/serial0", baud=115200):
         self.port = port
         self.baud = baud
         self.ser   = None

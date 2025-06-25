@@ -1,0 +1,6 @@
+Flask~=3.1.1
+numpy~=2.2.6
+matplotlib~=3.10.3
+pyserial~=3.5
+pyquaternion~=0.9.9
+bleak~=0.22.3
