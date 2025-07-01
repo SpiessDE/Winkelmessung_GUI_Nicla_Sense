@@ -1,16 +1,29 @@
-# ProBell-Winkelmessgerät
+# ProBell – Winkelmessgerät mit Nicla Sense ME & Raspberry Pi Zero 2 W
 
-Dieses Gerät dient zur Messung und Visualisierung von Winkelwerten mittels Arduino-Sensorboard: Nicla Sense ME. <br>
-Das Sensor-Board schickt Rohwinkelwerte als Quaternionen per serieller Verbindung (TX/RX) an den Raspberry Pi Zero 2W. <br>
-Beim Start (Stromversorgung = An) startet der Pi automatisch das Python-Skript und einen Wifi-Hotspot. <br>
-Per Tablett, Smartphone oder Laptop kann über den Browser (http://192.168.4.1:5000) auf die Bedienungsoberfläche zugegriffen werden. <br>
-Installation von Apps, Anwendungen etc. ist nicht nötig.
+Das System misst und visualisiert Winkel (Roll · Pitch · Yaw) mithilfe des **Nicla Sense ME**.  
+Die Sensor-Quaternionen werden per **UART (TX/RX)** an einen **Raspberry Pi Zero 2 W** übertragen.  
+Sobald der Pi Strom erhält …
+
+1. startet automatisch das Python-Backend **`app.py`**,  
+2. spannt einen WLAN-Hotspot **WinkelPi** (SSID) auf und  
+3. stellt die Web-GUI unter **<http://192.168.4.1:5000>** bereit.
+
+👉 **Kein** App-Download, **keine** lokale Installation – Tablet, Smartphone oder Laptop reichen völlig.
+
 ---
-## Funktionen
-- Live-Winkelanzeige (Roll, Pitch, Yaw)
-- Verschiedene Kalibriermethoden (Schwingkalibrierung, Statische Kalibrierung)
-- CSV-Aufzeichnung
-- Analysefunktionen (Maxima, Minima, FFT)
+
+## Kernfunktionen
+
+| Kategorie            | Details                                                                            |
+| -------------------- | ---------------------------------------------------------------------------------- |
+| **Live-Anzeige**     | Roll · Pitch · Yaw in Echtzeit (50 Hz)                                              |
+| **Kalibrierung**     | • Schwing-Kalibrierung  • Statische Kalibrierung                                   |
+| **Daten-Logging**    | CSV-Export der Roh-Quaternionen und berechneten Winkel                             |
+| **Analyse-Tools**    | Maxima / Minima, FFT-Spektrum, Pendeldauer-Ermittlung                              |
+
+---
+
+
 ---
 ## Benötigte Hardware
 | Stück | Teil                     | Hinweis                                                  |
